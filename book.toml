@@ -1,0 +1,22 @@
+[book]
+title = "Handbook"
+authors = ["Kirubakaran Shanmugam"]
+description = "Books and Learning Materials."
+language = "en"
+
+[rust]
+edition = "2018"
+
+[output.html.print]
+enable = false
+
+[output.html.fold]
+enable = true  # Whether or not to enable section folding
+level = 0      # The depth to start folding
+
+[output.html]
+copy-fonts = true
+default-theme = "dark"
+preferred-dark-theme = "Navy"
+git-repository-icon = "fa-github"
+git-repository-url = "https://github.com/kribakarans/handbooks"
