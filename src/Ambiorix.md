@@ -330,6 +330,46 @@ Check with `?` if the instance object is still available or not:
 Phonebook
 Phonebook.Contact
 ```
+#### Complete Phone book Instance
+```
+# ba-cli commands:
+
+Phonebook.Contact.+
+Phonebook.Contact.+
+
+Phonebook.Contact.1.E-Mail.+
+Phonebook.Contact.2.E-Mail.+
+Phonebook.Contact.1.PhoneNumber.+
+Phonebook.Contact.2.PhoneNumber.+
+
+Phonebook.Contact.1.FirstName="Alpha"
+Phonebook.Contact.1.LastName="Beta"
+Phonebook.Contact.2.FirstName="Electric"
+Phonebook.Contact.2.LastName="Energy"
+Phonebook.Contact.1.PhoneNumber.1.Phone="+919876543211"
+Phonebook.Contact.1.E-Mail.1.E-Mail="alphabeta@email.com"
+Phonebook.Contact.2.PhoneNumber.1.Phone="+919363728361"
+Phonebook.Contact.2.E-Mail.1.E-Mail="energy@email.com"
+
+# ba-cli output:
+ - * - [bus-cli] (0)
+ > Phonebook.?
+Phonebook.
+Phonebook.Contact.1.
+Phonebook.Contact.1.FirstName="Alpha"
+Phonebook.Contact.1.LastName="Beta"
+Phonebook.Contact.1.E-Mail.1.
+Phonebook.Contact.1.E-Mail.1.E-Mail="alphabeta@email.com"
+Phonebook.Contact.1.PhoneNumber.1.
+Phonebook.Contact.1.PhoneNumber.1.Phone="+919625918617"
+Phonebook.Contact.2.
+Phonebook.Contact.2.FirstName="Electric"
+Phonebook.Contact.2.LastName="Energy"
+Phonebook.Contact.2.E-Mail.1.
+Phonebook.Contact.2.E-Mail.1.E-Mail="energy@email.com"
+Phonebook.Contact.2.PhoneNumber.1.
+Phonebook.Contact.2.PhoneNumber.1.Phone="+919863798161"
+```
 # [Ambiorix Variants](https://gitlab.com/prpl-foundation/components/ambiorix/tutorials/collections/variants/-/blob/main/README.md#variants)
 In `C` programming language all data types are always `fixed` types which can not change at run-time. This makes it hard to define functions or callbacks of which some of the arguments could be a different type depending on the situation. Typically in `C` programming this is solved by using `void *` and `casting`. The disadvantage of this technique is that you lose type information, which could lead to unwanted side effects.
 
