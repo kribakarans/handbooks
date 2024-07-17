@@ -1,3 +1,5 @@
+# Ambiorix
+
 # [Getting Started](https://gitlab.com/prpl-foundation/components/ambiorix/tutorials/getting-started#getting-started)
 
 ### Setup Git
@@ -1383,3 +1385,957 @@ The second argument is a path and is referring to one or more objects in the `re
 - Search Path - This is a `Path Name` that contains search criteria for addressing a set of instance objects and/or their Parameters. A Search Path may contain a `Search Expression` or `Wildcard`.
 
 All of the functions have a `ret` argument, which is a `Ambiorix Variant` and will contain the response if the function execution did not fail.
+
+# [Ambiorix Data Models - Subscriptions](https://gitlab.com/prpl-foundation/components/ambiorix/tutorials/datamodels/client/subscriptions#ambiorix-data-models---subscriptions)
+
+## Introduction
+
+When using a modular system, different processes can provide their own data model. **However one process might be interested in data model changes of another process. This information can be obtained by sending out events and subscribing to these events.**
+## Different types of events
+
+The Ambiorix data model already provides a set of default events. These default events are automatically sent when the data model is updated using a `transaction`. Transactions will be discussed in a different tutorial, but you can see **a transaction as a group of multiple actions that are executed at once. If one of these actions fails, nothing should be changed**. The full documentation on transactions can be found in [Actions, Transactions & Events](https://gitlab.com/prpl-foundation/components/ambiorix/libraries/libamxd/-/blob/main/doc/actions_transactions_events.md).
+
+The default events are explained in the [ODL documentation](https://gitlab.com/prpl-foundation/components/ambiorix/libraries/libamxo/-/blob/main/doc/odl.md#define-events), but are repeated here for clarity:
+
+- `dm:root-added` - send when a new `root` object has been added
+- `dm:root-removed` - send when a `root` object has been deleted
+- `dm:object-added` - send when an object has been added in the hierarchical tree
+- `dm:object-removed` - send when an object has been removed from the hierarchical tree
+- `dm:instance-added` - send when an instance has been created
+- `dm:instance-removed` - send when an instance has been deleted
+- `dm:object-changed` - send when an object has been changed
+- `dm:periodic-inform` - send at a regular interval, only when periodic-inform has been enabled
+- `app:start` - The application should send this event when the data model is loaded
+- `app:stop` - The application should send this event when the data model is going to be removed.
+
+Besides these events, it is also possible to create object-defined events. These events must be defined in the `object definition body`.
+
+### ODL event syntax
+
+Syntax:
+```
+event "<name>";
+```
+A concrete example of such an event would be a [Device.LocalAgent.Threshold.{i}.Triggered!](https://usp-data-models.broadband-forum.org/tr-181-2-13-0-usp.html#D.Device:2.Device.LocalAgent.Threshold.%7Bi%7D.Triggered!) event. This event must be send out when a focused parameter reached a given value.
+
+Sending out an object-defined event can be done by using
+
+```
+void amxd_object_emit_signal(amxd_object_t* const object, const char* name, amxc_var_t* const data);
+```
+
+This is considered as an advanced feature and will not be discussed in this tutorial. If you are interested in this functionality, you can have a look at the [cpu-info example](https://gitlab.com/prpl-foundation/components/ambiorix/examples/datamodel/cpu-info). Here we will focus on the default events instead.
+
+## What does an ambiorix event looks like
+
+When an ambiorix event is triggered, a variant is sent out containing the event data. Depending on the back-end you are using, this variant can be converted to a back-end specific message before it is send out over the bus. At the receiving side, this message is converted back to a variant. The nice thing about this system is that you don't have to care about how the data is transported. You just want to be able to receive events.
+
+An event variant is a hash table of data. Depending on which event was triggered, different information can be available in the table, but it will always contain at least 3 entries:
+
+- The `notification` type, for example `dm:object-added`
+- The `object` the notification belongs to, for example `Phonebook.Contact.contact-1.PhoneNumber.`
+- The `path` to the object, for example `Phonebook.Contact.1.PhoneNumber.`
+
+The difference between the `object` and `path` is that an `object` will contain the instance name (Alias) if it has one, while this Alias is replaced by an index for the `path`. In case of the Phonebook example, there is no parameter Alias, so the `object` name will be the same as the `path`: `Phonebook.Contact.1.Phonenumber.`.
+
+Here you can see the corresponding variant:
+
+```
+{
+    notification = "dm:object-added",
+    object = "Phonebook.Contact.1.PhoneNumber.",
+    path = "Phonebook.Contact.1.PhoneNumber."
+}
+```
+
+Depending on which event was sent, other information can also be present in the event variant. For example when adding an instance of `Contact` to the `Phonebook` object, you will get the following event:
+
+```
+{
+    index = 1,
+    keys = {
+    },
+    name = "1",
+    notification = "dm:instance-added",
+    object = "Phonebook.Contact.",
+    parameters = {
+        FirstName = ""
+        LastName = "",
+    },
+    path = "Phonebook.Contact."
+}
+```
+
+Besides the `notification`, `object` and `path`, the event also has entries for the instance `index`, its `parameters` at creation time and its `keys`. The `key parameters` of an instance uniquely identify that instance. In other words, you can never have 2 instances with the same key parameters. More on this is explained in the odl [documentation](https://gitlab.com/prpl-foundation/components/ambiorix/libraries/libamxo/-/blob/main/doc/odl.md) and in the tutorial [Object And Parameter Validation](https://gitlab.com/prpl-foundation/components/ambiorix/tutorials/datamodels/server/validation).
+
+## Ambiorix subscription functions
+
+Subscribing to events and unsubscribing from events from an object can be done with
+
+```
+int amxb_subscribe(amxb_bus_ctx_t* const ctx,
+                   const char* object,
+                   const char* expression,
+                   amxp_slot_fn_t slot_cb,
+                   void* priv);
+
+int amxb_unsubscribe(amxb_bus_ctx_t* const ctx,
+                     const char* object,
+                     amxp_slot_fn_t slot_cb,
+                     void* priv);
+```
+
+How it works is explained in the [documentation](https://soft.at.home.gitlab.io/ambiorix/libraries/libamxb/master/dc/d54/a00094.html#ga9ad6c052f5f2494b73c5d8f296729ef4). The callback function that is called when an event is received has the following prototype:
+
+```
+typedef void(* amxp_slot_fn_t) (const char *const sig_name, const amxc_var_t *const data, void *const priv)
+```
+
+Its arguments are also explained in the [documentation](https://soft.at.home.gitlab.io/ambiorix/libraries/libamxp/master/d2/d79/a00051.html#ga26f72e3fe02d7ba95264f44c9b7d3c6f). The passed private data is the same data that was provided when subscribing.
+
+The passed `expression` when subscribing can be used to filter out certain events. A few examples are given here to show which kinds of expressions are valid. Suppose you are subscribing to events from the `Phonebook.Contact.` object. By default you will receive all events that are sent out from this object. If you are only interested in events when `Contact` objects are added or removed, you could apply a filter such as:
+
+```
+const char* expression = "notification in ['dm:instance-added','dm:instance-removed']"
+```
+
+This will filter out all events with a different notification. If you are only interested in notifications when a certain parameter is set, you could add this to the expression as well:
+
+```
+const char* expression = "notification in ['dm:instance-added','dm:instance-removed'] && parameters.FirstName == 'Ella'"
+```
+
+Now you will only receive events if an instance is added or removed and the parameter `FirstName` is equal to `Ella`. It is also possible to expand this search path with wildcards. Suppose you want to be notified of all additions or removals where the `FirstName` starts with `Ell`, then you can use the `matches` keyword and as a value pass a [posix extended regular expression](https://www.gnu.org/software/findutils/manual/html_node/find_html/posix_002dextended-regular-expression-syntax.html):
+
+```
+const char* expression = "notification in ['dm:instance-added','dm:instance-removed'] && parameters.FirstName matches 'Ell\.*'"
+```
+
+Now you will also get events when a `Contact` named `Elliot` is added.
+
+### Lab1 - Interactive subscribe example
+
+There already exists an example subscription client for Ambiorix and we will use it in this lab. This example can be found [here](https://gitlab.com/prpl-foundation/components/ambiorix/examples/baapi/subscribe).
+
+It explains how to subscribe to events using a command line application. The README file explains how to subscribe to events from the greeter plugin using ubus. In this lab we will subscribe to events from our Phonebook applications using PCB.
+
+
+> Note: you can also make this lab using ubus. Which ubus commands to execute are not listed here, but the output you receive from amx-subscribe should be the same.
+
+Let's create a directory for the example and clone it there.
+
+> **NOTE**
+> 
+> If you followed the Getting Started tutorial, all examples should already be available in your workspace directory, if it is already available, you can skip cloning the repository.
+
+```
+mkdir -p ~/workspace/ambiorix/examples/baapi
+cd ~/workspace/ambiorix/examples/baapi
+git clone git@gitlab.com:prpl-foundation/components/ambiorix/examples/baapi/subscribe.git
+```
+
+You can build the applications using
+
+```
+cd ~/workspace/ambiorix/examples/baapi/subscribe
+make
+sudo -E make install
+```
+
+The application uses `AMXB_BACKEND` as an environment variable to determine the back-end that will be used. Since we are using PCB in this lab, we will set it to
+
+```
+export AMXB_BACKEND=/usr/bin/mods/amxb/mod-amxb-pcb.so
+```
+
+Before continuing, switch to the `lab1` folder and launch the `phonebook.odl` using amxrt
+
+```
+cd ~/workspace/ambiorix/tutorials/datamodels/client/subscriptions/labs/lab1
+amxrt -D phonebook.odl
+```
+
+Now you can subscribe to events using the subscribe application:
+
+```
+amx-subscribe <URI> <OBJECT> [<EXPRESSION>]
+```
+
+- URI - the uri to connect to, for pcb this is normally pcb:/var/run/pcb_sys
+- OBJECT - the object path of the `data model` object of which you want to receive events.
+- EXPRESSION - (optional) an event filter expression.
+
+We will listen to events from the Phonebook object
+
+```
+$ amx-subscribe pcb:/var/run/pcb_sys Phonebook. 
+```
+
+When launched nothing will happen, the `amx-subscribe` application is now waiting for events. All you need to do is make sure the `phonebook` is generating events on the object `Phonebook.`
+
+So open a new console and run `pcb_cli`. First check that the `Phonebook.` object can be found
+
+```
+> Phonebook.?
+Phonebook
+Phonebook.Contact
+```
+
+Then add a new Contact
+
+```
+> Phonebook.Contact.+
+Phonebook.Contact.1
+Phonebook.Contact.1.LastName=
+Phonebook.Contact.1.FirstName=
+```
+
+Now you should see incoming events in the terminal where you subscribed to events.
+
+```
+Notification received [Phonebook]:
+{
+    index = 1,
+    keys = {
+    },
+    name = "1",
+    notification = "dm:instance-added",
+    object = "Phonebook.Contact.",
+    parameters = {
+        FirstName = ""
+        LastName = "",
+    },
+    path = "Phonebook.Contact."
+}
+Notification received [Phonebook]:
+{
+    notification = "dm:object-added",
+    object = "Phonebook.Contact.1.PhoneNumber.",
+    path = "Phonebook.Contact.1.PhoneNumber."
+}
+Notification received [Phonebook]:
+{
+    notification = "dm:object-added",
+    object = "Phonebook.Contact.1.E-Mail.",
+    path = "Phonebook.Contact.1.E-Mail."
+}
+```
+
+The `amx-subscribe` that is running, will print all events from all objects under the `Phonebook` object. Using the `expression` feature of the `Ambiorix` framework , it is possible to easily filter out the events you want to see.
+
+Now stop the `amx-subscribe` (press CTRL+C in the console where it is running) application and relaunch it:
+
+```
+amx-subscribe pcb:/var/run/pcb_sys Phonebook.Contact. "notification in ['dm:instance-added','dm:instance-removed'] && parameters.FirstName == 'Ella'"
+```
+
+Add a new contact named `John`
+
+```
+> Phonebook.Contact.+{FirstName="John"}
+Phonebook.Contact.2.FirstName=John
+```
+
+This should not generate any event. Add a new contact named `Ella`
+
+```
+> Phonebook.Contact.+{FirstName="Ella"}
+Phonebook.Contact.3.FirstName=Ella
+```
+
+Now you will get an event because the subscribe expression matches the event
+
+```
+Notification received [Phonebook.Contact]:
+{
+    index = 3,
+    keys = {
+    },
+    name = "3",
+    notification = "dm:instance-added",
+    object = "Phonebook.Contact.",
+    parameters = {
+        FirstName = "Ella"
+        LastName = "",
+    },
+    path = "Phonebook.Contact."
+}
+```
+
+Similarly if you remove both contacts, you will only receive an event for deleting the contact named `Ella`.
+
+```
+> Phonebook.Contact.2.-
+> Phonebook.Contact.3.-
+```
+
+```
+Notification received [Phonebook.Contact]:
+{
+    index = 3,
+    keys = {
+    },
+    name = "3",
+    notification = "dm:instance-removed",
+    object = "Phonebook.Contact.",
+    parameters = {
+        FirstName = "Ella"
+        LastName = "",
+    },
+    path = "Phonebook.Contact."
+}
+```
+
+### Lab1 - Test Log
+
+Getting below error even the backend is exported:
+```
+$ amx-subscribe ubus:/var/run/ubus/ubus.sock Phonebook.
+ 
+ERROR -- No backends specified
+```
+
+Below workaround can be done:
+```
+amx-subscribe -B /usr/bin/mods/amxb/mod-amxb-ubus.so  -u ubus:/var/run/ubus/ubus.sock  Phonebook.
+```
+
+Test log:
+```
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ amxrt -D ./phonebook.odl 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ ubus list
+Phonebook
+Phonebook.Contact
+[root@ambiorix]:~/.../subscriptions/labs/lab1$
+[root@ambiorix]:~/.../subscriptions/labs/lab1$
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ amx-subscribe -B /usr/bin/mods/amxb/mod-amxb-ubus.so  -u ubus:/var/run/ubus/ubus.sock  Phonebook. &
+Wait until object [Phonebook.] is available
+Wait done - object [Phonebook.] is available
+
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ ba-cli Phonebook.Contact.+ 
+> Phonebook.Contact.+
+Phonebook.Contact.1.
+Notification received from [Phonebook]:
+{
+    eobject = "Phonebook.Contact.",
+    index = 
+1,
+    keys = {
+    },
+    name = "1",
+    notification = "dm:instance-added",
+    object = "Phonebook.Contact.",
+    parameters = {
+        FirstName = "",
+        LastName = ""
+    },
+    path = "Phonebook.Contact."
+}
+Notification received from [Phonebook]:
+{
+    eobject = "Phonebook.Contact.[1].PhoneNumber.",
+    notification = "dm:object-added",
+    object = "Phonebook.Contact.1.PhoneNumber.",
+    parameters = {
+        Phone = ""
+    },
+    path = "Phonebook.Contact.1.PhoneNumber."
+}
+Notification received from [Phonebook]:
+{
+    eobject = "Phonebook.Contact.[1].E-Mail.",
+    notification = "dm:object-added",
+    object = "Phonebook.Contact.1.E-Mail.",
+    parameters = {
+        E-Mail = ""
+    },
+    path = "Phonebook.Contact.1.E-Mail."
+}
+```
+
+Re-launch with filter:
+```
+$ amx-subscribe -B /usr/bin/mods/amxb/mod-amxb-ubus.so  -u ubus:/var/run/ubus/ubus.sock  Phonebook. "notification in ['dm:instance-added','dm:instance-removed'] && parameters.FirstName == 'Ella'" &
+Wait until object [Phonebook.] is available
+Wait done - object [Phonebook.] is available
+
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ ba-cli Phonebook.Contact.+ 
+> Phonebook.Contact.+
+Phonebook.Contact.1.
+
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ ba-cli Phonebook.Contact.+{FirstName="John"} 
+> Phonebook.Contact.+{FirstName=John}
+Phonebook.Contact.2.
+
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ ba-cli Phonebook.Contact.+{FirstName="Ella"}   <<<< Event received
+> Phonebook.Contact.+{FirstName=Ella}
+Phonebook.Contact.3.
+
+Notification received from [Phonebook]:
+{
+    eobject = "Phonebook.Contact.",
+    index = 3,
+    keys = {
+    },
+    name = "3",
+    notification = "dm:instance-added",
+    object = "Phonebook.Contact.",
+    parameters = {
+        FirstName = "Ella",
+        LastName = ""
+    },
+    path = "Phonebook.Contact."
+}
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ ba-cli Phonebook.Contact.2.-
+> Phonebook.Contact.2.-
+Phonebook.Contact.2.
+Phonebook.Contact.2.PhoneNumber.
+Phonebook.Contact.2.E-Mail.
+
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ 
+[root@ambiorix]:~/.../subscriptions/labs/lab1$ ba-cli Phonebook.Contact.3.-    <<<< Event received
+> Phonebook.Contact.3.-
+Phonebook.Contact.3.
+Phonebook.Contact.3.PhoneNumber.
+Phonebook.Contact.3.E-Mail.
+
+Notification received from [Phonebook]:
+{
+    eobject = "Phonebook.Contact.",
+    index = 3,
+    keys = {
+    },
+    name = "3",
+    notification = "dm:instance-removed",
+    object = "Phonebook.Contact.",
+    parameters = {
+        FirstName = "Ella",
+        LastName = ""
+    },
+    path = "Phonebook.Contact."
+}
+```
+
+
+# Object Definition Language
+
+## Introduction
+
+The Object Definition Language provides a simple mean to define a data model.
+
+A data model is a hierarchical tree of objects where each object can contain 0, 1 or more parameters and 0, 1 or more functions.
+## Syntax Notation
+
+Throughout this document odl syntax is provided in railroad [syntax diagrams](https://en.wikipedia.org/wiki/Syntax_diagram). In these diagrams you start reading from left to right and just follow the "rails".
+
+Blocks with rounded corners are called "terminals", what is in that block just needs to be copied, except when it starts with `<` and ends with `>` . Blocks with straight corners are called "non-terminals" (note that the names of these are always in capitals), there will be another diagram for that block.
+
+In some "terminals" the content in the block is between `<` and `>` characters. Read the correct topic in [Appendix A - Syntax Overview](#appendix-a-syntax-overview) for more information about these blocks.
+
+White spaces must be put between each block, except when the block only contains a single symbol like `%`, `!`, `&`, `#`, `?`.
+
+### Example Of Railroad Diagram
+
+![[Pasted image 20240716054357.png]]
+
+According to this diagram all of the following are valid `include` syntaxes:
+```
+include "my-file.odl";
+include 'my-file.odl';
+#include 'my-file.odl';
+&include "my-file.odl";
+?include 'my-file.odl':"backup-file.odl";
+```
+## Comments
+
+In an odl file it is possible to write comments.
+- Single line comments start with `//` and span till the end of the line (newline)
+- Multi-line comments start with `/*` and end with `*/`
+
+Comments can be used at any place in the odl file.
+## Using Configuration Options and Environment Variables.
+
+In an odl file it is allowed to use the defined config options at many places. Instead of using a fixed string, it can be replaced by `${<NAME>}`, in this notation the name references a configuration option. If no configuration option exists with the given name it is replaced with an empty string.
+
+The same can be done with **environment variables, using the notation `$(<NAME>)`**, in this notation the name references a environment variable. If no environment variable exists with the given name it is replaced with an empty string.
+
+```
+${var}    - Local Variable
+$(envvar) - Environment variable
+```
+
+Configuration options or environment variables can be used within a string to make it partially configurable, e.g.: `${prefix_}LocalData`, when the configuration option `prefix_` is defined and has the value `X_RPL_COM_` the result string will be `X_PRPL_COM_LocalData`.
+#### Example
+```
+%config {
+    prefix_ = "X_PRPL_COM_";
+    myinclude = "test.odl";
+}
+include "${myinclude}";
+%define {
+    object MQTT {
+        object "${prefix_}Extra" {
+        }
+    }
+}
+```
+
+In above example the file `test.odl` will be included. The object `MQTT.X_PRPL_COM_Extra` will be defined.
+
+> **NOTE**
+> Using undefined configuration options or environment variables in the odl file could lead to some failures during parsing of the odl file. Undefined configuration options or environment variables will be replaced with an empty string.
+> 
+> It is also recommended to put fields using configuration options or environment variables between quotes (single or double)
+
+## ODL Files
+
+ODL (Object Definition Language) files are files that can define a data model and bind function implementations to these definitions. These definitions make it easy to define [BBF TR181](https://usp-data-models.broadband-forum.org/tr-181-2-15-1-usp.html) like data models in just minutes. When using the ambiorix tools and libraries it can be registered to different bus systems or use different protocols to make the defined data model(s) accessible to other applications (on the same host or remote).
+
+Ambiorix uses a [Bus Agnostic API](https://gitlab.com/prpl-foundation/components/ambiorix/libraries/libamxb) to make it possible to create services and applications on top of different bus systems and protocols. Besides the Bus Agnostic Library for each supported bus system or protocol a specific back-end must be available.
+
+At the moment of writing the following bus systems and protocols can be used:
+
+- [ubus](https://gitlab.com/prpl-foundation/components/ambiorix/modules/amxb_backends/amxb_ubus).
+- [pcb](https://gitlab.com/prpl-foundation/components/ambiorix/modules/amxb_backends/amxb_pcb) (SoftAtHome proprietary bus system).
+- [USP](https://gitlab.com/prpl-foundation/components/ambiorix/modules/amxb_backends/amxb_usp)/IMTP - [USP](https://gitlab.com/prpl-foundation/components/ambiorix/modules/amxb_backends/amxb_usp)/MQTT.
+- [RBus](https://gitlab.com/prpl-foundation/components/ambiorix/modules/amxb_backends/amxb_rbus) (in development, check the gitlab repository for the current state).
+- [DBus](https://gitlab.com/prpl-foundation/components/ambiorix/modules/amxb_backends/amxb_dbus) (in development, check the gitlab repository for the current state).
+- [JSONRPC](https://gitlab.com/prpl-foundation/components/ambiorix/modules/amxb_backends/amxb_jsonrpc) (currently not opensourced).
+
+An ODL file is a structured text file. At the top level the following elements can be used:
+
+- [include](#include)
+- [import](#import)
+- [requires](#requires)
+- [config](#config)
+- [define](#define)
+- [populate](#populate)
+
+![[Pasted image 20240716060506.png]]
+
+# Include
+
+With `include`, `#include`, `&include` or `?include` other odl files or directories containing odl files can be included. Parsing of the include file is done first - except when using `&include` - before continuing the current odl file (that contains the include).
+
+Mandatory includes are specified with `include` or `&include`, optional includes with `#include`. When an optional include file or directory is not available, parsing of the current odl continues. When a mandatory include file or directory is not available, parsing stops with an error.
+
+The conditional include `?include` takes two include files or directories separated with a `:`. When the first include file or directory is not found, the second file or directory will be loaded. If none of the files or directories exists, parsing stops with an error. If the first file is found, but is not a valid odl file, parsing stops with an error. If the first is a directory and contains an invalid odl file, parsing stops with an error.
+
+When using `&include`, a check is done to verify that the file or directory exists, if the file or directory is not found, parsing stops with an error, otherwise the file or directory is added to a list of include files that need to be loaded. The file or directory included with `&include` will not be loaded immediately.
+
+When post includes `&include` are loaded is depending on the application. When using the ambiorix run-time (`amxrt`) all post include files or directory (`&include`) are parsed after the `entry-points` with reason 0 (AMXO_START) are invoked. When the `entry-points` are called and all successful, all post include files and directories are loaded. After the post include files are loaded, the `entry-points` are called with reason 2 (AMXO_ODL_LOADED). This is mainly used when some initialization needs to be done before loading the default values. Typically a post include only contains a `%populate` section.
+
+Includes can be done anywhere at top level in the odl file, outside a section (`%config`, `%define`, `%populate`).
+
+The name of the file or directory must be put between quotes (single or double) and can contain an absolute path or relative path. When a relative path is specified (not starting with `/`), the file or directory is searched in the include dirs. (by default the current working directory). The include directories can be configured in the config option `include-dirs`.
+
+The name of the odl file or directory may be fully or partially replaced with a configuration option or an environment variable.
+
+Each `include` statement must be terminated with a `;`.
+#### Mandatory includes:
+-  `include "file.odl"`
+- `&include "file.odl"`
+#### Optional include:
+- `#include "file.odl"`
+#### Conditional include:
+- `?include "file1.odl:file2.odl"`
+
+> **NOTE**
+> Recursive includes are not allowed. If file `A` includes file `B`, file `B` includes file `C` and file `C` includes `A` then the last include is invalid as it creates a recursive include.
+> When recursive includes are detected, parsing will stop with an error.
+
+## Include Syntax
+
+![[Pasted image 20240716062308.png]]
+
+## Include Example
+
+```
+%config {
+    name = "tr181-mqtt";
+}
+#include "mod_sahtrace.odl";
+#include "${name}_extra.odl";
+include "${name}_definition.odl";
+?include "${name}-save.odl:${name}-defaults.odl";
+```
+
+# Import
+
+Throughout an odl file references to functions can be provided. The odl parser will try to resolve these function names to a function implementation. The parser gets help of function resolvers. Extra function resolvers can be registered to the odl parser. The odl parser already has 3 function resolvers, `auto` resolver (the default), the `function table` (ftab) resolver and the `import` resolver. The last one uses loaded shared objects (loaded with [dlopen](https://man7.org/linux/man-pages/man3/dlopen.3.html)) and tries to resolve the function names using [dlsym](https://man7.org/linux/man-pages/man3/dlsym.3.html).
+
+With the `import` shared objects can be loaded. The loaded shared objects will be used by the `import resolver` to resolve function symbols in the loaded shared objects. An absolute or relative path may be provided together with the name of the shared object. When no path or a relative path is specified the shared object is searched in the import directories as specified by the `import-dirs` configuration section.
+
+The `import` can be used anywhere at top level, between any sections. Make sure that shared objects are imported before using symbols from the shared object.
+
+An alias for a shared object can be provided using `as "<NAME>"`
+
+The `import` uses [`dlopen`](https://www.man7.org/linux/man-pages/man3/dlopen.3.html) to load the shared object, some of the attributes of `dlopen` can be specified:
+
+- `RTLD_NOW` (from the linux man pages)
+
+    > If this value is specified, or the environment variable LD_BIND_NOW is set to a nonempty string, all undefined symbols in the shared object are resolved before dlopen() returns. If this cannot be done, an error is returned.
+
+- `RTLD_GLOBAL` (from the linux man pages)
+
+    > The symbols defined by this shared object will be made available for symbol resolution of subsequently loaded shared objects.
+
+The default behavior, if no attributes are specified, is `RTLD_LAZY` (from the linux man pages)
+
+> Perform lazy binding. Resolve symbols only as the code that references them is executed. If the symbol is never referenced, then it is never resolved. (Lazy binding is performed only for function references; references to variables are always immediately bound when the shared object is loaded.)
+
+An extra attribute is defined `RTLD_NODELETE` which will not unload the loaded shared object when no symbols are used.
+
+> NOTE
+> 
+> - Shared objects of which no symbols are used, are unloaded after parsing the odl files, unless the flag `RTLD_NODELETE` is set on the import instruction.
+> - Importing the same shared object multiple times (with different attributes), will have no effect. A shared object will be loaded only one time, all other imports of the same shared object are ignored.
+
+An `alias` can be specified to make it easier to refer to the shared object. The `alias` can be used when defining the [entry-points](#define-entry-points) or can be used in [resolver instructions](#resolver-instructions).
+
+The attributes are optional. Zero one or more of these attributes can be specified with the `import`.
+
+The `import` must be terminated with a `;`.
+
+Instead of specifying the shared object file name, the name may be replaced with a configuration option or an environment variable.
+
+## Import Syntax
+
+![[Pasted image 20240716063515.png]]
+## Import Example
+```
+import "greeter_plugin.so" as "greeter";
+
+%config {
+    name = "tr181-mqtt"; 
+}
+
+import "${name}.so" as "${name}";
+```
+## Print
+
+Using the `print` instruction messages can be printed to `stdout`. The print instruction can be used anywhere at top level, between sections.
+
+It can be used to print the values of configuration options, which can be helpful in finding out what the current value of a configuration options is at that moment.
+
+The `print` instruction must be terminated with a `;`.
+### Print Syntax
+
+![[Pasted image 20240716063817.png]]
+### Print Example
+
+```
+%config{
+    Option1 = "Value1";
+}
+
+print "Option1 = ${Option1}";
+```
+
+# Requires
+
+Using the `requires` keyword a dependency to another part of the data model can be specified. The parser will not check if the required object is available, the object path will be put in a list of required object paths.
+
+It is up to the application that uses the odl parser to check if all required objects are available and wait for them if needed.
+
+When using the ambiorix runtime application (`amxrt`), it will check if the required objects are available and wait for them if they are not available. The ambiorix run time will register (build the loaded data model) only when all required objects are available, amxrt will only call the defined entry-points when all required objects are available.
+
+The `requires` instruction must be terminated with a `;`.
+
+Only one object path can be specified with the `requires` instruction, multiple `requires` instructions may be used.
+
+### Requires Syntax
+
+![[Pasted image 20240716064100.png]]
+
+### Requires Example
+
+```
+requires "NetModel.Intf.";
+```
+
+# Sections
+
+There are 3 kinds of sections available in an odl file:
+
+- `%config` - see [Section %config](#section-%25config)
+- `%define` - see [Section %define](#section-%25define)
+- `%populate`
+
+Section rules:
+
+- All sections are optional, so an odl file without any section is valid.
+- Each section can be used multiple times in a single odl file.
+- The different kind of sections can appear in any order.
+
+> **NOTE:**
+> - Although the order of the sections doesn't matter, it matters that objects and parameters are defined in a `%define` section, before they are used in the `%populate` section.
+> - When using configuration options in `<NAME>` or `<TEXT>` also make sure they are defined before using them.
+
+Typically the first section used is the `%config` section.
+
+## Section %config
+
+In the config section values for configuration options can be specified. There is no restriction on which configuration options are set. Which configuration options will be used all depends on the application or plug-in.
+
+Each config section starts with `%config {` and ends with `}`.
+
+Everything between the curly braces `{` and `}` is considered as the body of the config section.
+
+Each `%config` section has a scope, the values of the `options` defined in a `%config` section are only kept for that scope.
+
+The scope of a `%config` section starts where it is defined and ends at the end of the file where it was defined. When an `include` is encountered the current configuration is passed to the include file.
+
+In other words, changes in the configuration options are only visible in the current file, and in its included files but never in `parent` files (an odl file that included this one).
+
+If a configuration option must be passed to the top level the attribute `%global` can be put before the name of the option. This will make the new value globally visible.
+
+Each configuration option must be terminated with `;`.
+
+#### Example of configuration option scope
+Assume these two odl files, named `main.odl` and `included.odl`
+
+**main.odl**:
+```
+print "Start - Option1 = ${Option1}";
+%config{
+    Option1 = "Value1";
+}
+print "Before include - Option1 = ${Option1}";
+include "included.odl";
+print "After include - Option1 = ${Option1}";
+```
+
+**included.odl**:
+```
+print "In included - Option1 = ${Option1}";
+%config {
+    Option1 = "ChangeValue";
+}
+print "End of included - Option1 = ${Option1}";
+```
+
+When parsing the `main.odl` file using an application that uses the odl parser you should get this output (if printing to stdout is available), here `amxrt` (AMbioriX RunTime) is used to parse the odl file.
+
+```
+$ amxrt main.odl
+Start - Option1 =  (/home/sah4009/development/experiments/test_odls/main.odl@1)
+Before include - Option1 = Value1 (/home/sah4009/development/experiments/test_odls/main.odl@7)
+In included - Option1 = Value1 (/home/sah4009/development/experiments/test_odls/included.odl@1)
+End of included - Option1 = ChangeValue (/home/sah4009/development/experiments/test_odls/included.odl@7)
+After include - Option1 = Value1 (/home/sah4009/development/experiments/test_odls/main.odl@11)
+```
+
+Just before the end of `included.odl` the value of `Option1` is printed and is at that moment `ChangeValue`. When back in the `main.odl` after the include of `included.odl` the value of `Option` is back to the same value as before the include.
+
+### Configuration Option Names
+
+The names of configuration options can contain any character except space characters, but it is recommended to only use 0 - 9, a - z, A - Z, _ and -. When using other characters it is recommended to put the name between quotes (single or double), to avoid conflicts or misinterpretation by the parser.
+
+If a name contains dots (`.`), it refers to an element which is in a table or array. If the dots are part of the name it must be put between double and single quotes.
+
+A configuration option name can not use references to other configuration options or environment variables.
+
+**Examples of configuration option names:**
+
+```
+%config {
+    Option1 = "MyValue";
+    "$Option2" = "MyValue";
+    "Option3.Sub1" = "MyValue";
+    "Option3.Sub2" = "MyValue";
+    "'Option.With.Dots'" = "MyValue";
+}
+```
+
+The above example defines 4 configuration options at top level:
+
+- `Option1`
+- `$Option2`
+- `Option3` - which is a table
+- `Option.With.Dots`
+
+The table `Option3` will have to sub-values `Sub1` and `Sub2`. An alternative way to declare the table `Option3` is:
+
+```
+%config {
+   Option3 = {
+       Sub1 = "MyValue",
+       Sub2 = "MyValue"
+   };
+}
+```
+
+### Configuration Option Values
+
+A value can be any of the values as defined in [`<VALUE>`](#value).
+
+The values in a table or an array can be again one of these types. In other words it is possible to add a table in an array or define complex configuration options. In tables and arrays each individual value must be terminated with a `,`, except the last one which is terminated with `}` or `]`.
+
+**NOTE:** 
+When redefining a table or an array the full table or array is replaced.
+
+**Consider this example:**
+```
+%config {
+    MyTable = {
+        MySubTable = {
+            MyOption1 = "Value1",
+            MyOption2 = "Value2"
+        },
+        MySubArray = [ 1,2,3 ]
+    };
+}
+%config {
+    MyTable = {
+        MySubTable2 = {
+            Option1 = true,
+            Option2 = false
+        },
+    };
+}
+```
+
+The second `MyTable` definition will override the first definition of `MyTable`. In other words the configuration option `MyTable.MySubTable` will not exist anymore, including all sub-values if any. Also the array `MySubArray` will not exist anymore.
+
+It is possible to change or add values in tables or arrays, by using the dot notation in the name.
+
+```
+%config {
+    MyTable.MySubTable.MyOption2 = "ChangeValue";
+    MyTable.MySubArray.0 = 0;
+    MyTable.MySubArray.2 = 2;
+    MyTable.MySubTable.MyOption3 = "NewValue";
+}
+```
+
+### Extending Configuration Option Values
+
+Config sections can contain list variables e.g.
+
+```
+%config {
+    mylist = [ "foo" ];
+}
+```
+
+It is possible to append items to the list by including an extra odl file.
+
+For example:
+
+```
+%config {
+    %global mylist += [ "bar"];
+}
+```
+
+This results in `mylist` being `["foo", "bar"]`.
+
+Besides lists, this can also be used for integers and strings. For example:
+
+```
+%config {
+    mytext-config = "Hello";
+    mynumber-config = 10;
+}
+
+%config {
+    %global mytext-config += " World";
+    %global mynumber-config += 20;
+}
+
+// Result mytext-config = "Hello World" 
+//        mynumber-config = 30
+```
+
+### %config Syntax
+
+![[Pasted image 20240716071607.png]]
+
+**`<VALUE>`**
+
+![[Pasted image 20240716071642.png]]
+
+For more information about `<NAME>` read [<`NAME`>](#name) in [Appendix A - Syntax Overview](#appendix-a-syntax-overview).  
+For more information about `<PATH>` read [<`PATH`>](#path) in [Appendix A - Syntax Overview](#appendix-a-syntax-overview).  
+For more information about `<VALUE>` read [<`VALUE`>](#value) in [Appendix A - Syntax Overview](#appendix-a-syntax-overview).  
+For more information about `<TEXT>` read [<`TEXT`>](#text) in [Appendix A - Syntax Overview](#appendix-a-syntax-overview).  
+For more information about `<NUMBER>` read [<`NUMBER`>](#number) in [Appendix A - Syntax Overview](#appendix-a-syntax-overview).  
+For more information about `<DATETIME>` read [<`DATETIME`>](#datetime) in [Appendix A - Syntax Overview](#appendix-a-syntax-overview).
+
+### %config Example
+**Example:**
+```
+%config {
+    import-dbg = true;
+    message = "My welcome message";
+    %global auto-resolver-order = [ "import", "ftab", "*" ];
+    personal-message = "${message} to everyone who reads this";
+}
+```
+
+### ODL Parser Configuration Options
+
+The parser itself uses the following configuration options:
+
+- `include-dirs` - an array of include directories (quoted strings). Include files specified in the odl file with no path or a relative path are searched in these directories.
+- `import-dirs` - an array of of import directories (quoted strings). Import files (plug-in shared objects) specified in the odl file with no path or a relative path are searched in these directories.
+- `import-dbg` - boolean (true or false). Makes the import function resolver print more information to stderr.
+- `silent` - boolean (true or false). When set to true no `import` errors or messages are printed, the `print` command that can be used between sections will also be silenced.
+- `odl-import` - boolean (true or false). When set to true (when not defined, the default is true), the `import` will load the specified shared object file, when set to false no shared object specified with `import` are loaded.
+- `auto-resolver-order` - an array of resolver names (quoted strings). The order specified in this list is the order the auto resolver invokes them to resolve a function symbols. This list can end with a `*` to indicate all other resolvers in no specified order. When the list is empty, the auto resolver will not resolve any symbol.
+- `define-behavior` - is a key - value map, which can be used to change the behavior of the ODL parser when reading `%define` sections. The available keys are:
+    - `existing-object` - possible values are "error" or "update", default behavior is "error"
+    - `existing-parameter` - possible values are "error" or "update", default behavior is "error"
+- `populate-behavior` - is a key - value map, which can be used to change the behavior of the ODL parser when reading `%populate` sections. The available keys are:
+    - `unknown-parameter` - possible values are "error", "warning", "add", default behavior is "error". When set to "add" the parser will add the parameter to the object, even if it is not defined.
+    - `duplicate-instance` - possible values are "error", "update", default behavior is "error". When set to "update" the parser will update the already added instance.
+- `odl`
+    - `buffer-size` - when saving in odl format (config or data model) a buffer is used to write in chunks of at least the specified buffer-size. When not defined a buffer size of 16K is used. The buffer is used to reduce the number of writes on the file system.
+
+> **NOTE**
+> 
+> By default the parser will throw an error when defining multiple-times the same object or parameter. This behavior can be changed by setting `define-behavior.existing-object` and `define-behavior.existing-parameter` respectively to `update`. In that case it will update the object or parameter. It is possible to change the parameter `type` but it is not possible to change the object `type` (from singleton to multi-instance or the other way around).
+> 
+> By default the parser will throw an error when setting a parameter value in the `%populate` section for a non-defined parameter. This behavior can be changed by setting the `populate-behavior.unknown-parameter` to `add` which will then add the parameter using the value `type` as parameter type, no parameter attributes will be added, this behavior is not `recommended`. The setting can be changed to `warning` as well, the parser will then give a warning, but continues.
+> 
+> By default the parser will throw an error when creating a duplicate instance (same index, name or key values). This behavior can be changed by setting `populate-behavior.duplicate-instance` to `update`. In this case the parser will update the instance. Updating an instance can also be done by `selecting` the object and changing the `parameter` values.
+
+## Section %define
+
+In the `%define` section `mibs` (modular information blocks), the data model `objects` and `entry points` are defined. Objects can contain parameters, functions or other objects.
+
+Each define section starts with `%define {` and ends with `}`.
+
+Everything between the curly braces `{` and `}` is considered as the body of the define section.
+
+In a `%define` section a hierarchical object tree can be defined. Such a hierarchical object tree is also known as a `data model`. It is possible to define a part of the TR181 data model as described in the [tr181 BBF data model](https://usp-data-models.broadband-forum.org/tr-181-2-15-1-usp.html).
+
+Using `select` it is possible to extend already define objects.
+
+> **NOTE**
+> 
+> MIBs are used to extend data model objects at run-time (or in the `%define` section), and are not compatible with definitions in [tr181 BBF data model](https://usp-data-models.broadband-forum.org/tr-181-2-15-1-usp.html). The data models defined by BBF are very static in nature, while the MIBs make the data model more dynamic, as extra parameters, objects and functions can be added and removed at any time.
+
+An `%define` body may be empty.
+
+### %define Syntax
+
+![[Pasted image 20240716203706.png]]
+
+### %define Example
+```
+%define {
+}
+```
