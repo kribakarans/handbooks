@@ -6,4 +6,6 @@
 
 [HTML](HTML.md)
 
+[jQuery](jQuery.md)
+
 [Robot Framework](Robot_Framework.md)
