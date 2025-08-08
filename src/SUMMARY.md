@@ -14,6 +14,9 @@
 
 # Python
 - [Python-v1](Python/Python-v1.md)
+- [Flask](Python/Flask.md)
+- [FlaskAdvance](Python/FlaskAdvance.md)
+- [WebSocket](Python/WebSocket.md)
 
 # Robot
 - [Robot Framework](Robot/Robot_Framework.md)
