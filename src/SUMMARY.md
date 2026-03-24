@@ -1,22 +1,27 @@
+# Summary
 
-# Ambiorix
-- [Ambiorix](Ambiorix/Ambiorix.md)
-- [AMXC_Usage](Ambiorix/AMXC_Usage.md)
+[index](INDEX.md)
 
-# HTML
+- [INDEX](INDEX.md)
+
+# 1. AMBIORIX
+- [AMBIORIX](Ambiorix/Ambiorix.md)
+- [AMXC USAGE](Ambiorix/AMXC_Usage.md)
+
+# 2. HTML
 - [HTML](HTML/HTML.md)
 
-# jQuery
-- [jQuery](jQuery/jQuery.md)
+# 3. JQUERY
+- [JQUERY](jQuery/jQuery.md)
 
-# Kotlin
-- [Kotlin](Kotlin/Kotlin.md)
+# 4. KOTLIN
+- [KOTLIN](Kotlin/Kotlin.md)
 
-# Python
-- [Python-v1](Python/Python-v1.md)
-- [Flask](Python/Flask.md)
-- [FlaskAdvance](Python/FlaskAdvance.md)
-- [WebSocket](Python/WebSocket.md)
+# 5. PYTHON
+- [FLASK](Python/Flask.md)
+- [FLASKADVANCE](Python/FlaskAdvance.md)
+- [PYTHON V1](Python/Python-v1.md)
+- [WEBSOCKET](Python/WebSocket.md)
 
-# Robot
-- [Robot Framework](Robot/Robot_Framework.md)
+# 6. ROBOT
+- [ROBOT FRAMEWORK](Robot/Robot_Framework.md)

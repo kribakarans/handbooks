@@ -37,7 +37,7 @@ jobs:
       - name: Install KBook
         run: |
           echo "Clone KBook ..."
-          git clone https://github.com/kribakarans/kbook.git
+          git clone https://gitlab.com/klabkode/devkit/kbook/kbook.git
 
       - name: Setup Pages
         id: pages
@@ -55,7 +55,7 @@ jobs:
 
           rm -rf kbook
           echo "Build KBook ..."
-          kbook "Handbooks" "src" "https://github.com/kribakarans/handbooks/"
+          kbook-build "Handbooks" "src" "https://github.com/kribakarans/handbooks/"
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
